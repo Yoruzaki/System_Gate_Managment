@@ -1,101 +1,127 @@
-import React, { useState } from "react";
+import { useEffect, useState } from "react";
 
-const Profile = () => {
-  const [users, setUsers] = useState([
-    { id: 1, name: "Bourabha Kamel", role: "Admin", password: "******" },
-    { id: 2, name: "Walid Chakir", role: "Agent", password: "******" },
-  ]);
-
+export default function Profile() {
+  const [users, setUsers] = useState([]);
   const [name, setName] = useState("");
   const [role, setRole] = useState("Agent");
   const [password, setPassword] = useState("");
-  const [editingUser, setEditingUser] = useState(null);
 
-  // Ajouter un utilisateur
+  // Fetch users from the backend on component mount
+  useEffect(() => {
+    fetch("http://127.0.0.1:5000/users")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setUsers(data);
+        } else {
+          console.error("Invalid data format:", data);
+        }
+      })
+      .catch((err) => console.error("Error fetching users:", err));
+  }, []);
+  
+
+  // Function to add a new user
   const addUser = () => {
-    if (!name || !password) return alert("Name and Password are required!");
+    if (!name || !role || !password) {
+      alert("All fields are required!");
+      return;
+    }
 
-    const newUser = { id: users.length + 1, name, role, password: "******" };
-    setUsers([...users, newUser]);
-
-    // Reset form
-    setName("");
-    setRole("Agent");
-    setPassword("");
+    fetch("http://127.0.0.1:5000/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, role, password }),
+    })
+      .then((res) => res.json())
+      .then(() => {
+        setUsers([...users, { id: users.length + 1, name, role, password: "******" }]);
+        setName("");
+        setRole("Agent");
+        setPassword("");
+      })
+      .catch((err) => console.error("Error adding user:", err));
   };
 
-  // Supprimer un utilisateur
-  const deleteUser = (id) => {
-    if (window.confirm("Voulez-vous supprimer cet utilisateur ?")) {
-      setUsers(users.filter((user) => user.id !== id));
+  // Function to update a user
+  const updateUser = async (id) => {
+    const newName = prompt("Enter new name:");
+    const newRole = prompt("Enter new role (Admin/Agent):");
+    const newPassword = prompt("Enter new password:");
+  
+    if (!newName || !newRole || !newPassword) {
+      alert("All fields are required!");
+      return;
+    }
+  
+    try {
+      const response = await fetch(`http://127.0.0.1:5000/users/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName, role: newRole, password: newPassword }),
+      });
+  
+      if (!response.ok) {
+        throw new Error("Failed to update user");
+      }
+  
+      setUsers(users.map(user => user.id === id ? { ...user, name: newName, role: newRole, password: "******" } : user));
+    } catch (error) {
+      console.error("Error updating user:", error);
     }
   };
+  
 
-  // Gérer l'édition d'un utilisateur
-  const startEditing = (user) => {
-    setEditingUser(user);
-    setName(user.name);
-    setRole(user.role);
-    setPassword(""); // Permettre la modification du mot de passe
+  // Function to delete a user
+  const deleteUser = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this user?")) return;
+  
+    try {
+      const response = await fetch(`http://127.0.0.1:5000/users/${id}`, {
+        method: "DELETE",
+      });
+  
+      if (!response.ok) {
+        throw new Error("Failed to delete user");
+      }
+  
+      setUsers(users.filter((user) => user.id !== id));
+    } catch (error) {
+      console.error("Error deleting user:", error);
+    }
   };
-
-  // Sauvegarder la modification
-  const saveEdit = () => {
-    if (!name || !password) return alert("Name and Password are required!");
-
-    setUsers(users.map((user) =>
-      user.id === editingUser.id
-        ? { ...user, name, role, password: "******" }
-        : user
-    ));
-
-    setEditingUser(null);
-    setName("");
-    setRole("Agent");
-    setPassword("");
-  };
+  
+  
 
   return (
     <div className="p-5">
-      <h2 className="text-2xl font-bold mb-4">Profile Management</h2>
+      <h2 className="text-xl font-bold mb-4">User Profile Management</h2>
 
-      {/* Formulaire d'ajout ou de modification */}
-      <div className="mb-5 p-4 bg-gray-100 rounded">
+      {/* Add User Form */}
+      <div className="mb-4 p-4 border rounded shadow">
+        <h3 className="text-lg font-semibold">Add New User</h3>
         <input
           type="text"
-          placeholder="Enter Name"
+          placeholder="Name"
           className="border p-2 mr-2"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
+        <select className="border p-2 mr-2" value={role} onChange={(e) => setRole(e.target.value)}>
+          <option value="Admin">Admin</option>
+          <option value="Agent">Agent</option>
+        </select>
         <input
           type="password"
-          placeholder="Enter Password"
+          placeholder="Password"
           className="border p-2 mr-2"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
-        <select
-          className="border p-2"
-          value={role}
-          onChange={(e) => setRole(e.target.value)}
-        >
-          <option value="Admin">Admin</option>
-          <option value="Agent">Agent</option>
-        </select>
-
-        {editingUser ? (
-          <button onClick={saveEdit} className="bg-green-500 text-white px-4 py-2 ml-2">
-            Save Changes
-          </button>
-        ) : (
-          <button onClick={addUser} className="bg-blue-500 text-white px-4 py-2 ml-2">
-            Add User
-          </button>
-        )}
+        <button onClick={addUser} className="bg-green-500 text-white px-4 py-2 rounded">Add User</button>
       </div>
 
-      {/* Liste des utilisateurs */}
+      {/* Users Table */}
       <table className="w-full border-collapse border">
         <thead>
           <tr className="bg-gray-200">
@@ -112,12 +138,12 @@ const Profile = () => {
               <td className="border p-2">{user.id}</td>
               <td className="border p-2">{user.name}</td>
               <td className="border p-2">{user.role}</td>
-              <td className="border p-2">{user.password}</td>
+              <td className="border p-2">******</td>
               <td className="border p-2">
-                <button onClick={() => startEditing(user)} className="bg-yellow-500 text-white px-3 py-1 mr-2">
+                <button onClick={() => updateUser(user.id)} className="bg-yellow-500 text-white px-2 py-1 mx-1">
                   Edit
                 </button>
-                <button onClick={() => deleteUser(user.id)} className="bg-red-500 text-white px-3 py-1">
+                <button onClick={() => deleteUser(user.id)} className="bg-red-500 text-white px-2 py-1 mx-1">
                   Delete
                 </button>
               </td>
@@ -127,6 +153,4 @@ const Profile = () => {
       </table>
     </div>
   );
-};
-
-export default Profile;
+}
