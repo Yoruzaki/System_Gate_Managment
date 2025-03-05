@@ -39,6 +39,11 @@ def get_db_connection():
         print(f"Error connecting to the database: {e}")
         return None
 
+@app.route('/open-gate', methods=['POST'])
+def api_open_gate():
+    open_gate()  # Calls the function that sends a request to ESP32
+    return jsonify({"message": "Gate open request sent"}), 200
+
 # ------------------ USERS ROUTES ------------------
 
 # Delete a user

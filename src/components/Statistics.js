@@ -42,12 +42,12 @@ const Statistics = () => {
   }, []);
 
   const openGate = () => {
-    fetch("http://localhost:5000/open-gate", { method: "GET" })
-      .then((response) => response.text())
-      .then((data) => console.log("Gate response:", data))
+    fetch("http://localhost:5000/open-gate", { method: "POST" })
+      .then((response) => response.json())
+      .then((data) => console.log(data.message))
       .catch((err) => console.error("Error opening gate:", err));
   };
-
+  
   const barChartData = {
     labels: stats.monthlyEntries.map((_, index) => `Day ${index + 1}`),
     datasets: [
