@@ -3,7 +3,7 @@ from flask_cors import CORS
 import mysql.connector
 from mysql.connector import Error
 import requests
-ESP32_IP = "http://192.168.1.100"  # Change this to your ESP32 IP Address
+ESP32_IP = "http://192.168.1.104"  # Change this to your ESP32 IP Address
 
 
 
