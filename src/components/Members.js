@@ -1,119 +1,192 @@
 import React, { useState, useEffect } from "react";
+import { toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import { ClipLoader } from "react-spinners";
+import { FaSearch, FaUpload, FaEdit, FaTrash } from "react-icons/fa";
+import debounce from "lodash.debounce";
 
 const Members = () => {
   const [members, setMembers] = useState([]);
-  const [form, setForm] = useState({
-    name: "",
-    photo: "",
-    mobile: "",
-    address: "",
-    carName: "",
-    carPlate: "",
-  });
+  const [form, setForm] = useState({ name: "", photo: "", mobile: "", address: "", carName: "", carPlate: "" });
   const [editingId, setEditingId] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
 
-  // Fetch members from the backend
   useEffect(() => {
-    fetch("http://127.0.0.1:5000/members")
-      .then((res) => res.json())
-      .then((data) => setMembers(data))
-      .catch((err) => console.error("Error fetching members:", err));
+    fetchMembers();
   }, []);
+
+  const fetchMembers = () => {
+    fetch("http://127.0.0.1:5000/members")
+      .then(res => res.json())
+      .then(data => {
+        setMembers(data);
+        setLoading(false);
+      })
+      .catch(err => console.error("Error fetching members:", err));
+  };
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  // Add or update a member
-  const addMember = () => {
+  const handleFileChange = (e) => {
+    setSelectedFile(e.target.files[0]);
+  };
+
+  const handleEdit = (member) => {
+    setEditingId(member.id);
+    setForm({
+      name: member.name,
+      photo: member.photo,
+      mobile: member.mobile,
+      address: member.address,
+      carName: member.carName,
+      carPlate: member.carPlate
+    });
+  };
+
+  const addOrUpdateMember = async () => {
     if (!form.name || !form.mobile || !form.carPlate) {
-      return alert("Name, Mobile, and Car Plate are required!");
+      return toast.error("Name, Mobile, and Car Plate are required!");
     }
-  
-    fetch("http://127.0.0.1:5000/members", {
-      method: "POST",
+
+    let photoFilename = form.photo || "default-avatar.png";
+    if (selectedFile) {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+      const response = await fetch("http://127.0.0.1:5000/upload", { method: "POST", body: formData });
+      const data = await response.json();
+      photoFilename = data.filename;
+    }
+
+    const method = editingId ? "PUT" : "POST";
+    const url = editingId ? `http://127.0.0.1:5000/members/${editingId}` : "http://127.0.0.1:5000/members";
+
+    fetch(url, {
+      method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      body: JSON.stringify({ ...form, photo: photoFilename }),
     })
-      .then((res) => res.json())
+      .then(res => res.json())
       .then(() => {
         setForm({ name: "", photo: "", mobile: "", address: "", carName: "", carPlate: "" });
-  
-        // Fetch updated members list after adding
-        fetch("http://127.0.0.1:5000/members")
-          .then((res) => res.json())
-          .then((data) => setMembers(data));
+        setSelectedFile(null);
+        setEditingId(null);
+        toast.success(editingId ? "Member updated!" : "Member added!");
+        fetchMembers();
       })
-      .catch((err) => console.error("Error adding member:", err));
-  };
-  
-
-  // Edit member
-  const editMember = (member) => {
-    setForm(member);
-    setEditingId(member.id);
+      .catch(err => console.error("Error adding/updating member:", err));
   };
 
-  // Delete member
-  const deleteMember = async (id) => {
+  const deleteMember = (id) => {
     if (!window.confirm("Are you sure you want to delete this member?")) return;
-
-    try {
-      const response = await fetch(`http://127.0.0.1:5000/members/${id}`, {
-        method: "DELETE",
-      });
-      if (!response.ok) throw new Error("Failed to delete member");
-      
-      setMembers(members.filter((member) => member.id !== id));
-    } catch (error) {
-      console.error("Error deleting member:", error);
-    }
+    fetch(`http://127.0.0.1:5000/members/${id}`, { method: "DELETE" })
+      .then(() => {
+        setMembers(members.filter(member => member.id !== id));
+        toast.info("Member deleted!");
+      })
+      .catch(err => console.error("Error deleting member:", err));
   };
 
   return (
-    <div>
-      <h2 className="text-2xl font-bold mb-4">Members Management</h2>
-      <div className="mb-5 p-4 bg-gray-100 rounded">
-        <input type="text" name="name" placeholder="Name" className="border p-2 mr-2" value={form.name} onChange={handleChange} />
-        <input type="text" name="photo" placeholder="Photo URL" className="border p-2 mr-2" value={form.photo} onChange={handleChange} />
-        <input type="text" name="mobile" placeholder="Mobile" className="border p-2 mr-2" value={form.mobile} onChange={handleChange} />
-        <input type="text" name="address" placeholder="Address" className="border p-2 mr-2" value={form.address} onChange={handleChange} />
-        <input type="text" name="carName" placeholder="Car Name" className="border p-2 mr-2" value={form.carName} onChange={handleChange} />
-        <input type="text" name="carPlate" placeholder="Car Plate" className="border p-2 mr-2" value={form.carPlate} onChange={handleChange} />
-        <button onClick={addMember} className="bg-blue-500 text-white px-4 py-2 ml-2">
+    <div className="p-5 bg-white shadow-md rounded-lg">
+      <h2 className="text-3xl font-bold mb-4">Members Management</h2>
+      
+      {/* Search Bar */}
+      <div className="flex items-center border p-2 mb-4 w-full rounded-lg bg-blue-50">
+        <FaSearch className="text-blue-500 mr-2" />
+        <input
+          type="text"
+          placeholder="Search Members..."
+          className="bg-transparent w-full outline-none"
+          onChange={(e) => debounce(() => setSearch(e.target.value), 300)()}
+        />
+      </div>
+
+      {/* Input Fields in a Single Row */}
+      <div className="flex flex-wrap gap-2 mb-5">
+        {Object.keys(form).map((key) => (
+          key !== "photo" && (
+            <input
+              key={key}
+              name={key}
+              placeholder={key}
+              className="border p-2 rounded flex-1 min-w-[150px]"
+              value={form[key]}
+              onChange={handleChange}
+            />
+          )
+        ))}
+      </div>
+
+      {/* Upload Image and Add Member Buttons in the Same Row */}
+      <div className="flex gap-2 mb-5">
+        <label className="border p-2 flex items-center cursor-pointer rounded-lg bg-gray-100 hover:bg-gray-200 transition duration-300">
+          <FaUpload className="mr-2" /> Upload Image
+          <input type="file" onChange={handleFileChange} className="hidden" />
+        </label>
+        <button
+          onClick={addOrUpdateMember}
+          className={`px-4 py-2 rounded ${
+            form.name && form.mobile && form.carPlate ? "bg-blue-500 hover:bg-blue-600" : "bg-gray-400 cursor-not-allowed"
+          } text-white transition duration-300`}
+          disabled={!form.name || !form.mobile || !form.carPlate}
+        >
           {editingId ? "Update Member" : "Add Member"}
         </button>
       </div>
 
-      <table className="w-full border-collapse border">
-        <thead>
-          <tr className="bg-gray-200">
-            <th className="border p-2">Photo</th>
-            <th className="border p-2">Name</th>
-            <th className="border p-2">Mobile</th>
-            <th className="border p-2">Address</th>
-            <th className="border p-2">Car Name</th>
-            <th className="border p-2">Car Plate</th>
-            <th className="border p-2">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {members.map((member) => (
-            <tr key={member.id}>
-              <td className="border p-2"><img src={member.photo} alt="Member" className="w-10 h-10 rounded-full" /></td>
-              <td className="border p-2">{member.name}</td>
-              <td className="border p-2">{member.mobile}</td>
-              <td className="border p-2">{member.address}</td>
-              <td className="border p-2">{member.carName}</td>
-              <td className="border p-2">{member.carPlate}</td>
-              <td className="border p-2">
-                <button onClick={() => editMember(member)} className="bg-yellow-500 text-white px-2 py-1 mr-2">Edit</button>
-                <button onClick={() => deleteMember(member.id)} className="bg-red-500 text-white px-2 py-1">Delete</button>
-              </td>
+      {selectedFile && <p className="text-sm text-gray-600 mb-2">{selectedFile.name}</p>}
+
+      {/* Members Table */}
+      {loading ? <ClipLoader size={50} color={"#123abc"} loading={loading} /> : (
+        <table className="w-full border-collapse border mt-5">
+          <thead>
+            <tr className="bg-gray-200">
+              <th className="border p-2">Photo</th>
+              <th className="border p-2">Name</th>
+              <th className="border p-2">Mobile</th>
+              <th className="border p-2">Car Plate</th>
+              <th className="border p-2">Actions</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {members.filter(m => m.name.toLowerCase().includes(search.toLowerCase()) || m.carPlate.includes(search))
+              .map(member => (
+                <tr key={member.id} className="hover:bg-gray-50 transition duration-300">
+                  <td className="border p-2 w-20">
+                    <img
+                      src={`http://127.0.0.1:5000/uploads/${member.photo}`}
+                      alt=""
+                      className="w-12 h-12 rounded-full object-cover"
+                    />
+                  </td>
+                  <td className="border p-2">{member.name}</td>
+                  <td className="border p-2">{member.mobile}</td>
+                  <td className="border p-2">{member.carPlate}</td>
+                  <td className="border p-2 w-40"> {/* Fixed width for Actions column */}
+                    <div className="flex justify-between items-center">
+                      <button
+                        onClick={() => handleEdit(member)}
+                        className="px-2 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600 transition duration-300 flex items-center mx-1"
+                      >
+                        <FaEdit className="mr-1" /> Edit
+                      </button>
+                      <button
+                        onClick={() => deleteMember(member.id)}
+                        className="px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition duration-300 flex items-center mx-1"
+                      >
+                        <FaTrash className="mr-1" /> Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 };

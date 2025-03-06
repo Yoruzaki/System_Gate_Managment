@@ -3,8 +3,10 @@ from flask_cors import CORS
 import mysql.connector
 from mysql.connector import Error
 import requests
+import os
+from datetime import datetime, timedelta
 ESP32_IP = "http://192.168.1.104"  # Change this to your ESP32 IP Address
-
+from flask import Flask, send_from_directory
 
 
 app = Flask(__name__)
@@ -18,6 +20,26 @@ db_config = {
     'database': 'gate_system'
 }
 
+UPLOAD_FOLDER = "uploads"
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+
+# Ensure the uploads folder exists
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if "file" not in request.files:
+        return jsonify({"error": "No file part"}), 400
+
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "No selected file"}), 400
+
+    filename = file.filename
+    file.save(os.path.join(app.config["UPLOAD_FOLDER"], filename))
+    
+    return jsonify({"filename": filename}), 200
+
 
 def open_gate():
     try:
@@ -29,6 +51,10 @@ def open_gate():
     except requests.exceptions.RequestException as e:
         print("Error communicating with ESP32:", e)
 
+# Serve images from 'uploads' directory
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory("uploads", filename)
         
 def get_db_connection():
     """Helper function to create and return a database connection."""
@@ -45,6 +71,35 @@ def api_open_gate():
     return jsonify({"message": "Gate open request sent"}), 200
 
 # ------------------ USERS ROUTES ------------------
+@app.route('/entries-per-day', methods=['GET'])
+def get_entries_per_day():
+    db = get_db_connection()
+    if not db:
+        return jsonify({"error": "Database connection failed"}), 500
+
+    cursor = db.cursor(dictionary=True)
+    try:
+        # Fetch count of entries per day for the last 30 days
+        query = """
+        SELECT DATE(entry_time) AS entry_date, COUNT(*) AS count
+        FROM entries
+        WHERE entry_time >= NOW() - INTERVAL 30 DAY
+        GROUP BY DATE(entry_time)
+        ORDER BY entry_date ASC
+        """
+        cursor.execute(query)
+        result = cursor.fetchall()
+
+        # Convert results into a dictionary format
+        data = {str(row["entry_date"]): row["count"] for row in result}
+        
+        return jsonify(data), 200
+    except Error as e:
+        print(f"Database error: {e}")
+        return jsonify({"error": "Error fetching data"}), 500
+    finally:
+        cursor.close()
+        db.close()
 
 # Delete a user
 @app.route('/users/<int:user_id>', methods=['DELETE'])
@@ -306,11 +361,56 @@ def get_statistics():
         cursor.execute("SELECT COUNT(*) AS monthly_entries FROM entry_logs WHERE MONTH(entry_time) = MONTH(CURDATE())")
         monthly_entries = cursor.fetchone()['monthly_entries']
 
+        # Fetching active members (members who have entered today)
+        cursor.execute("""
+            SELECT COUNT(DISTINCT m.id) AS active_members
+            FROM members m
+            JOIN entry_logs e ON m.carPlate = e.carPlate
+            WHERE DATE(e.entry_time) = CURDATE()
+        """)
+        active_members = cursor.fetchone()['active_members']
+
+        # Fetching inactive members (members who have NOT entered today)
+        cursor.execute("""
+            SELECT COUNT(DISTINCT m.id) AS inactive_members
+            FROM members m
+            WHERE m.carPlate NOT IN (
+                SELECT e.carPlate
+                FROM entry_logs e
+                WHERE DATE(e.entry_time) = CURDATE()
+            )
+        """)
+        inactive_members = cursor.fetchone()['inactive_members']
+
+        # Fetching entries per day for the last 30 days
+        cursor.execute("""
+            SELECT DATE(entry_time) AS entry_date, COUNT(*) AS entries_count
+            FROM entry_logs
+            WHERE entry_time >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+            GROUP BY DATE(entry_time)
+            ORDER BY entry_date
+        """)
+        entries_per_day = cursor.fetchall()
+
+        # Log the data for debugging
+        print({
+            "totalMembers": total_members,
+            "totalCars": total_cars,
+            "todayEntries": today_entries,
+            "monthlyEntries": monthly_entries,
+            "activeMembers": active_members,
+            "inactiveMembers": inactive_members,
+            "entriesPerDay": entries_per_day
+        })
+
         return jsonify({
             "totalMembers": total_members,
             "totalCars": total_cars,
             "todayEntries": today_entries,
-            "monthlyEntries": monthly_entries
+            "monthlyEntries": monthly_entries,
+            "activeMembers": active_members,
+            "inactiveMembers": inactive_members,
+            "entriesPerDay": entries_per_day
         })
     except Error as e:
         print(f"Database error: {e}")
@@ -319,7 +419,6 @@ def get_statistics():
         if db.is_connected():
             cursor.close()
             db.close()
-
 
 @app.route('/logs', methods=['GET'])
 def get_logs():
@@ -373,8 +472,35 @@ def generate_frames():
             frame = buffer.tobytes()
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.json
+    name = data.get('name')
+    password = data.get('password')
 
+    if not name or not password:
+        return jsonify({"status": "failed", "message": "Missing credentials"}), 400
 
+    db = get_db_connection()
+    if not db:
+        return jsonify({"status": "failed", "message": "Database connection failed"}), 500
+
+    cursor = db.cursor(dictionary=True)  # Fetch data as dictionary
+    try:
+        cursor.execute("SELECT role FROM users WHERE name = %s AND password = %s", (name, password))
+        user = cursor.fetchone()
+
+        if user:
+            return jsonify({"status": "success", "role": user['role']})  # Correct dictionary access
+        else:
+            return jsonify({"status": "failed", "message": "Invalid credentials"}), 401
+    except Error as e:
+        print(f"Database error: {e}")
+        return jsonify({"status": "failed", "message": "An error occurred while processing your request"}), 500
+    finally:
+        if db.is_connected():
+            cursor.close()
+            db.close()
 
 
 if __name__ == '__main__':
