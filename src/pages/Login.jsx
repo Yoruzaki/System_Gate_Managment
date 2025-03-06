@@ -23,7 +23,7 @@ const Login = () => {
         if (role === "Admin") {
           navigate("/admin-dashboard");
         } else if (role === "Agent") {
-          navigate("/statistics");
+          navigate("/agent-dashboard");
         }
       } else {
         setError("Invalid credentials. Please try again.");

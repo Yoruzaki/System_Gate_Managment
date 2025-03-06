@@ -264,6 +264,76 @@ def update_member(member_id):
             cursor.close()
             db.close()
 
+
+
+@app.route('/send-notification', methods=['POST'])
+def send_notification():
+    data = request.get_json()
+    name = data.get('name')
+    message = data.get('message')
+
+    if not name or not message:
+        return jsonify({"error": "Name and message are required"}), 400
+
+    db = get_db_connection()
+    if not db:
+        return jsonify({"error": "Database connection failed"}), 500
+
+    cursor = db.cursor()
+    try:
+        sql = "INSERT INTO notifications (name, message) VALUES (%s, %s)"
+        cursor.execute(sql, (name, message))
+        db.commit()
+        return jsonify({"message": "Notification sent successfully"}), 200
+    except Error as e:
+        print(f"Database error: {e}")
+        return jsonify({"error": "An error occurred while sending the notification"}), 500
+    finally:
+        if db.is_connected():
+            cursor.close()
+            db.close()
+    
+
+@app.route('/notifications', methods=['GET'])
+def get_notifications():
+    db = get_db_connection()
+    if not db:
+        return jsonify({"error": "Database connection failed"}), 500
+
+    cursor = db.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT id, name, message FROM notifications ORDER BY id DESC")
+        notifications = cursor.fetchall()
+        return jsonify(notifications), 200
+    except Error as e:
+        print(f"Database error: {e}")
+        return jsonify({"error": "Error fetching notifications"}), 500
+    finally:
+        if db.is_connected():
+            cursor.close()
+            db.close()
+@app.route('/delete-notification/<int:notification_id>', methods=['DELETE'])
+def delete_notification(notification_id): 
+    db = get_db_connection()
+    if not db:
+        return jsonify({"error": "Database connection failed"}), 500
+
+    cursor = db.cursor()
+    try:
+        sql = "DELETE FROM notifications WHERE id = %s"
+        cursor.execute(sql, (notification_id,))
+        db.commit()
+        return jsonify({"message": "Notification deleted successfully"}), 200
+    except Error as e:
+        print(f"Database error: {e}")
+        return jsonify({"error": "An error occurred while deleting the notification"}), 500
+    finally:
+        if db.is_connected():
+            cursor.close()
+            db.close()
+
+
+
 # Delete a member
 @app.route('/members/<int:member_id>', methods=['DELETE'])
 def delete_member(member_id):

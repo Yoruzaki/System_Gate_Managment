@@ -10,7 +10,7 @@ const CameraFeed = () => {
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);
       setDetectedPlate(data.carPlate);
-      setStatus(data.allowed ? "✅ Access Granted" : "❌ Access Denied");
+      setStatus(data.allowed ? " Access Granted" : " Access Denied");
     };
 
     return () => eventSource.close();
